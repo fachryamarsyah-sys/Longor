@@ -1,0 +1,20 @@
+RewriteEngine On
+
+# 1. Handle specific routing for bypass pages
+# Maps /bypass/name -> index.php?seller=name
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^bypass/([^/]+)/?$ index.php?seller=$1 [L,QSA]
+
+# 2. Handle specific routing for create admin pages
+# Maps /page/create/name -> page/create.php?admin=name
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^page/create/([^/]+)/?$ page/create.php?admin=$1 [L,QSA]
+
+# 3. General rule to remove .php extension
+# Maps /api -> api.php, /login -> login.php, etc.
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteCond %{REQUEST_FILENAME}\.php -f
+RewriteRule ^([^\.]+)$ $1.php [NC,L]
+
